@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+import argparse
+import sys
+import os
+import json
+import hashlib
+
+
+def simple_hash(filepath, size):
+    """Create a simple hash from the file size and the first 4096 bytes"""
+    m = hashlib.sha256()
+    m.update(str(size).encode())
+    with open(filepath, "rb") as f:
+        m.update(f.read(4096))
+    return m.hexdigest()
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Create a simple file index")
+    parser.add_argument('directory', nargs='?', default=".", help="directory to index (default: .)")
+    parser.add_argument('--file', "-f", nargs='?', default=".simple-index.json", help="index file (default: .simple-index.json)")
+    parser.add_argument('--verbose', '-v', action='count', default=0, help="print each file as JSON to stdout")
+    parser.add_argument('--force', action='store_true', default=False, help="override existing index file (default: false)")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    try:
+        args = parse_arguments()
+        mode = "x"
+        if os.path.exists(args.file):
+            if args.force:
+                mode = "w"
+            else: 
+                print(f"index file {args.file} already exists")
+                sys.exit(1)
+        total_files_count = 0
+        total_files_size = 0
+        with open(args.file, mode) as f:
+            for dirpath, dirnames, filenames, dir_fd in os.fwalk(args.directory):
+                for name in filenames:
+                    path = os.path.join(dirpath, name)
+                    stat = os.stat(name, dir_fd=dir_fd)
+                    row = {
+                        "path": path,
+                        "time": stat.st_mtime,
+                        "size": stat.st_size,
+                        "hash": simple_hash(path, stat.st_size),
+                    }
+                    if args.verbose:
+                        print(row)
+                    json.dump(row, f)
+                    f.write("\n")
+                    total_files_count += 1
+                    total_files_size += stat.st_size
+        print(f"Indexed {total_files_count} files with {total_files_size/1024/1024:.3f} MB")
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {path}")
+        sys.exit(2)
+
+
+
